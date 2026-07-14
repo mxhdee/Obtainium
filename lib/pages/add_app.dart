@@ -43,6 +43,8 @@ class AddAppPageState extends State<AddAppPage> {
   AppSource? pickedSource;
   Map<String, dynamic> additionalSettings = {};
   bool additionalSettingsValid = true;
+  bool _urlValid = false;
+  bool _prevValid = false;
   bool inferAppIdIfOptional = true;
   List<String> pickedCategories = [];
   int urlInputKey = 0;
@@ -110,15 +112,19 @@ class AddAppPageState extends State<AddAppPage> {
       if (updateUrlInput) {
         urlInputKey++;
       }
+      _urlValid = valid || pickedSourceOverride != null;
       final prevHost = pickedSource?.hosts.isNotEmpty == true
           ? pickedSource?.hosts.first
           : null;
-      final source = valid
-          ? sourceProvider.getSource(
-              userInput,
-              overrideSource: pickedSourceOverride,
-            )
-          : null;
+      AppSource? source;
+      try {
+        source = sourceProvider.getSource(
+          userInput,
+          overrideSource: pickedSourceOverride,
+        );
+      } catch (_) {
+        source = null;
+      }
       if (pickedSource?.sourceIdentifier != source?.sourceIdentifier ||
           overrideChanged ||
           (prevHost != null && prevHost != source?.hosts.firstOrNull)) {
@@ -133,7 +139,10 @@ class AddAppPageState extends State<AddAppPage> {
             ? !sourceProvider.ifRequiredAppSpecificSettingsExist(source)
             : true;
         inferAppIdIfOptional = true;
+      } else if (valid && !updateUrlInput && _prevValid) {
+        return;
       }
+      _prevValid = valid;
       _updateSourceNote();
       if (mounted) setState(() {});
     }
@@ -211,9 +220,7 @@ class AddAppPageState extends State<AddAppPage> {
         null;
   }
 
-  Future<void> addApp(
-    BuildContext context,
-  ) async {
+  Future<void> addApp(BuildContext context) async {
     gettingAppInfo = true;
     setState(() {});
     try {
@@ -377,7 +384,7 @@ class AddAppPageState extends State<AddAppPage> {
                     }
                   }
                   return MapEntry(
-                    e.name,
+                    e.sourceIdentifier,
                     await e.search(searchQuery, querySettings: querySettings),
                   );
                 } catch (err) {
@@ -555,6 +562,7 @@ class AddAppPageState extends State<AddAppPage> {
                 onPressed:
                     doingSomething ||
                         pickedSource == null ||
+                        !_urlValid ||
                         (pickedSource
                                     ?.combinedAppSpecificSettingFormItems
                                     .isNotEmpty ==
@@ -592,7 +600,7 @@ class AddAppPageState extends State<AddAppPage> {
                                     pickedSource!.sourceIdentifier ==
                                         s.sourceIdentifier),
                           )
-                          .map((s) => MapEntry(s.name, s.name)),
+                          .map((s) => MapEntry(s.sourceIdentifier, s.name)),
                     ],
                     label: tr('overrideSource'),
                   ),
@@ -647,9 +655,7 @@ class AddAppPageState extends State<AddAppPage> {
         child: searching
             ? const Center(child: CircularProgressIndicator())
             : FilledButton(
-                onPressed: searchQuery.isEmpty || doingSomething
-                    ? null
-                    : () {
+                onPressed: doingSomething ? null : () {
                         runSearch(context);
                       },
                 child: Text(tr('search')),
@@ -798,7 +804,12 @@ class AddAppPageState extends State<AddAppPage> {
   );
 
   Widget _getSourcesListWidget(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(16),
+    padding: EdgeInsets.only(
+      left: 16,
+      right: 16,
+      top: 16,
+      bottom: 16 + MediaQuery.of(context).padding.bottom,
+    ),
     child: Wrap(
       direction: Axis.horizontal,
       alignment: WrapAlignment.spaceBetween,
@@ -862,30 +873,30 @@ class AddAppPageState extends State<AddAppPage> {
                               isFirst: true,
                               isLast: true,
                               child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      pickedSource!.name,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                            fontWeight: FontWeight.bold,
-                                          ),
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    pickedSource!.name,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      val.data!,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        val.data!,
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
-                                      ),
-                                    ),
-                                  ],
+                                  ),
+                                ],
                               ),
                             ),
                           );

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/apps_provider.dart';
@@ -100,6 +101,16 @@ extension AppsProviderUpdates on AppsProvider {
       return updateCheckCompleter!.future;
     }
     final completer = updateCheckCompleter = Completer<List<App>>();
+    var completed = 0;
+    var total = 0;
+    refreshProgress = 0.0;
+    notify();
+    final progressTimer = Timer.periodic(const Duration(milliseconds: 250), (
+      _,
+    ) {
+      refreshProgress = total > 0 ? completed / total : 0.0;
+      notify();
+    });
     try {
       final List<App> updates = [];
       final MultiAppMultiError errors = MultiAppMultiError();
@@ -117,35 +128,73 @@ extension AppsProviderUpdates on AppsProvider {
                         DateTime.fromMicrosecondsSinceEpoch(0),
                   ),
         );
+        if (settingsProvider.onlyCheckInstalledOrTrackOnlyApps) {
+          appIds.removeWhere((id) {
+            final a = apps[id]?.app;
+            return a?.installedVersion == null &&
+                a?.settings.getBool('trackOnly') != true;
+          });
+        }
       } else {
         appIds = getAppsSortedByUpdateCheckTime(
           onlyCheckInstalledOrTrackOnlyApps:
               settingsProvider.onlyCheckInstalledOrTrackOnlyApps,
         );
       }
+      total = appIds.length;
       final results = await Future.wait(
-        appIds.map((appId) async {
-          final currentApp = apps[appId]?.app;
-          try {
-            final newApp = await fetchUpdate(appId);
-            if (newApp == null) return null;
-            final isUpdate =
-                currentApp != null &&
-                newApp.latestVersion != currentApp.latestVersion;
-            return MapEntry(newApp, isUpdate);
-          } catch (e) {
-            if ((e is RateLimitError || e is SocketException) &&
-                throwErrorsForRetry) {
-              rethrow;
-            }
-            if (e is RepositoryRenamedError) {
-              await updatePendingRepoRename(appId, e.newUrl);
-              return null;
-            }
-            errors.add(appId, e, appName: apps[appId]?.name);
-            return null;
-          }
-        }),
+        appIds
+            .map((appId) async {
+              final currentApp = apps[appId]?.app;
+              try {
+                final newApp = await fetchUpdate(appId);
+                if (newApp == null) return null;
+                final isUpdate =
+                    currentApp != null &&
+                    newApp.latestVersion != currentApp.latestVersion;
+                return MapEntry(newApp, isUpdate);
+              } on HandshakeException {
+                // Concurrent TLS handshakes to the same host can fail on
+                // certain devices/networks. Retry up to 5 times with
+                // staggered random delays to avoid all retries colliding.
+                const maxRetries = 5;
+                final rng = Random();
+                for (var attempt = 0; attempt < maxRetries; attempt++) {
+                  await Future.delayed(
+                    Duration(
+                      milliseconds: 250 + rng.nextInt(501),
+                    ),
+                  );
+                  try {
+                    final newApp = await fetchUpdate(appId);
+                    if (newApp == null) return null;
+                    final isUpdate =
+                        currentApp != null &&
+                        newApp.latestVersion != currentApp.latestVersion;
+                    return MapEntry(newApp, isUpdate);
+                  } on HandshakeException {
+                    if (attempt == maxRetries - 1) rethrow;
+                  }
+                }
+                return null;
+              } catch (e) {
+                if ((e is RateLimitError || e is SocketException) &&
+                    throwErrorsForRetry) {
+                  rethrow;
+                }
+                if (e is RepositoryRenamedError) {
+                  await updatePendingRepoRename(appId, e.newUrl);
+                  return null;
+                }
+                errors.add(appId, e, appName: apps[appId]?.name);
+                return null;
+              }
+            })
+            .map(
+              (f) => f.whenComplete(() {
+                completed++;
+              }),
+            ),
         eagerError: true,
       );
       final List<App> fetched = [];
@@ -170,7 +219,10 @@ extension AppsProviderUpdates on AppsProvider {
       }
       rethrow;
     } finally {
+      progressTimer.cancel();
       updateCheckCompleter = null;
+      refreshProgress = null;
+      notify();
     }
   }
 

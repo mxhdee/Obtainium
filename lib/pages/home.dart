@@ -106,13 +106,18 @@ class _HomePageState extends State<HomePage> {
     setIsReversing(index);
     if (index == 0) {
       selectedIndexHistory.clear();
-    } else if (selectedIndexHistory.isEmpty ||
-        selectedIndexHistory.last != index) {
-      final int existingInd = selectedIndexHistory.indexOf(index);
-      if (existingInd >= 0) {
-        selectedIndexHistory.removeAt(existingInd);
+    } else {
+      if (selectedIndexHistory.isEmpty || selectedIndexHistory.last != index) {
+        final int existingInd = selectedIndexHistory.indexOf(index);
+        if (existingInd >= 0) {
+          selectedIndexHistory.removeAt(existingInd);
+        }
+        selectedIndexHistory.add(index);
       }
-      selectedIndexHistory.add(index);
+      if (appsSelecting) {
+        appsSelecting = false;
+        appsPageKey.currentState?.clearSelected();
+      }
     }
     if (mounted) setState(() {});
   }
@@ -228,8 +233,11 @@ class _HomePageState extends State<HomePage> {
 
     Future<void> interpretLink(Uri uri) async {
       final action = uri.host;
-      final data = uri.queryParameters['url'] ??
-          (uri.path.length > 1 ? uri.path.substring(1) : '');
+      final data =
+          uri.queryParameters['url'] ??
+          (uri.path.length > 1
+              ? Uri.decodeComponent(uri.path.substring(1))
+              : '');
       try {
         if (action == 'add') {
           final AppsProvider ap = appsProvider;
@@ -249,9 +257,10 @@ class _HomePageState extends State<HomePage> {
           }
 
           final AppInMemory? existingApp = ap.apps.values
-              .where((AppInMemory a) =>
-                  a.app.url == standardizedUrl ||
-                  a.app.url == data)
+              .where(
+                (AppInMemory a) =>
+                    a.app.url == standardizedUrl || a.app.url == data,
+              )
               .firstOrNull;
 
           if (existingApp != null) {
@@ -371,7 +380,8 @@ class _HomePageState extends State<HomePage> {
     ];
 
     final layoutWidth = MediaQuery.sizeOf(context).width;
-    final useRail = isTV || layoutWidth >= 600;
+    final useLargeScreen = isTV || layoutWidth >= 840;
+    final useRail = useLargeScreen && !settingsProvider.alwaysUsePhoneLayout;
     final updateCount = context.select<AppsProvider, int>(
       (p) => p.findAppIdsWithPendingUpdates(installedOnly: true).length,
     );
@@ -389,7 +399,7 @@ class _HomePageState extends State<HomePage> {
 
     final currentIndex = this.currentIndex;
 
-    final twoPane = isTV || layoutWidth >= 900;
+    final twoPane = useLargeScreen && !settingsProvider.alwaysUsePhoneLayout;
     final useTwoPane = twoPane && currentIndex == 0;
 
     final detailPane =
@@ -451,12 +461,20 @@ class _HomePageState extends State<HomePage> {
       pushAddApp();
     }
 
-    // Compact FAB for the rail leading (an extended FAB would overflow it);
+    // Compact FAB for the rail trailing (an extended FAB would overflow it);
     // an expressive extended FAB for the bottom layout's primary action.
     final createFab = FloatingActionButton(
       onPressed: onAddPressed,
       tooltip: tr('addApp'),
       child: const Icon(Icons.add),
+    );
+    final actionsFab = FloatingActionButton(
+      onPressed: () {
+        settingsProvider.selectionClick();
+        appsPageKey.currentState?.showSelectedAppActions();
+      },
+      tooltip: plural('action', 2),
+      child: const Icon(Icons.more_vert),
     );
     final createFabExtended = FloatingActionButton.extended(
       onPressed: onAddPressed,
@@ -479,12 +497,7 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   FocusTraversalGroup(
                     child: NavigationRail(
-                      leading: currentIndex == 0 && !appsSelecting
-                          ? Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: createFab,
-                            )
-                          : null,
+                      groupAlignment: isTV ? -1.0 : 0.0,
                       destinations: pages
                           .map(
                             (e) => NavigationRailDestination(
@@ -497,6 +510,14 @@ class _HomePageState extends State<HomePage> {
                       selectedIndex: currentIndex,
                       onDestinationSelected: switchToPage,
                       labelType: NavigationRailLabelType.all,
+                      trailing: Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: currentIndex != 0
+                            ? const SizedBox(width: 56, height: 56)
+                            : appsSelecting
+                            ? actionsFab
+                            : createFab,
+                      ),
                     ),
                   ),
                   const VerticalDivider(thickness: 1, width: 1),

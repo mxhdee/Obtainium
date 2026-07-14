@@ -63,6 +63,15 @@ class AppsPageState extends State<AppsPage> {
 
   Timer? _searchDebounce;
 
+  int? _listDataSig;
+  List<AppInMemory>? _cachedListedApps;
+  List<String>? _cachedExistingUpdateIds;
+  List<String>? _cachedNewInstallIds;
+  List<String>? _cachedTrackOnlyUpdateIds;
+  Map<String?, List<int>>? _cachedGrouped;
+  List<String?>? _cachedListedGroups;
+  Set<App>? _cachedSelectedApps;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -120,6 +129,8 @@ class AppsPageState extends State<AppsPage> {
       settingsProvider.sortOrder.index,
       settingsProvider.pinUpdates,
       settingsProvider.buryNonInstalled,
+      Object.hashAll(selectedAppIds),
+      settingsProvider.groupBy,
       apps.length,
     ];
     for (final a in apps) {
@@ -514,6 +525,7 @@ class AppsPageState extends State<AppsPage> {
             fontStyle: FontStyle.italic,
           ),
         ),
+        autofocusConfirm: context.read<SettingsProvider>().isTV,
       );
       if (!confirmed) return;
       settingsProvider.selectionClick();
@@ -884,34 +896,42 @@ class AppsPageState extends State<AppsPage> {
     List<AppInMemory> listedApps,
   ) {
     final isFilterOff = filter.isIdenticalTo(neutralFilter, settingsProvider);
+    final trailing = <Widget>[
+      _getSelectAllButton(context, listedApps),
+      if (!isFilterOff)
+        IconButton(
+          tooltip: '${tr('filter')} - ${tr('remove')}',
+          onPressed: () => clearSearchAndFilter(),
+          icon: const Icon(Icons.filter_alt_off_outlined),
+        ),
+      IconButton(
+        tooltip: tr('filterApps'),
+        onPressed: () => showFilterDialog(context),
+        icon: const Icon(Icons.filter_list_rounded),
+      ),
+    ];
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        child: SearchBar(
-          controller: searchController,
-          hintText: tr('search'),
-          padding: const WidgetStatePropertyAll(
-            EdgeInsets.symmetric(horizontal: 16),
-          ),
-          leading: const Icon(Icons.search_rounded),
-          trailing: [
-            _getSelectAllButton(context, listedApps),
-            if (!isFilterOff)
-              IconButton(
-                tooltip: '${tr('filter')} - ${tr('remove')}',
-                onPressed: () => clearSearchAndFilter(),
-                icon: const Icon(Icons.filter_alt_off_outlined),
+        child: settingsProvider.isTV
+            ? _TVSearchBar(
+                controller: searchController,
+                onChanged: onSearchChanged,
+                trailing: trailing,
+                hintText: tr('search'),
+              )
+            : SearchBar(
+                controller: searchController,
+                hintText: tr('search'),
+                padding: const WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 16),
+                ),
+                leading: const Icon(Icons.search_rounded),
+                trailing: trailing,
+                onChanged: (value) {
+                  onSearchChanged(value);
+                },
               ),
-            IconButton(
-              tooltip: tr('filterApps'),
-              onPressed: () => showFilterDialog(context),
-              icon: const Icon(Icons.filter_list_rounded),
-            ),
-          ],
-          onChanged: (value) {
-            onSearchChanged(value);
-          },
-        ),
       ),
     );
   }
@@ -924,12 +944,16 @@ class AppsPageState extends State<AppsPage> {
     List<String> newInstallIdsAllOrSelected,
     List<String> trackOnlyUpdateIdsAllOrSelected,
   ) {
-    final onObtain = massObtainCallback(
-      context,
-      existingUpdateIdsAllOrSelected,
-      newInstallIdsAllOrSelected,
-      trackOnlyUpdateIdsAllOrSelected,
-    );
+    final onObtain =
+        (settingsProvider.showActionBannerForUpdateOnly &&
+            existingUpdateIdsAllOrSelected.isEmpty)
+        ? null
+        : massObtainCallback(
+            context,
+            existingUpdateIdsAllOrSelected,
+            newInstallIdsAllOrSelected,
+            trackOnlyUpdateIdsAllOrSelected,
+          );
     final cs = Theme.of(context).colorScheme;
     return SliverToBoxAdapter(
       child: AnimatedSize(
@@ -984,6 +1008,13 @@ class AppsPageState extends State<AppsPage> {
     List<AppInMemory> listedApps,
   ) {
     return [
+      if (appsProvider.loadingApps && listedApps.isEmpty)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(32, 0, 32, 8),
+            child: LinearProgressIndicator(),
+          ),
+        ),
       if (listedApps.isEmpty)
         SliverFillRemaining(
           child: EmptyState(
@@ -1002,51 +1033,24 @@ class AppsPageState extends State<AppsPage> {
     ];
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final appsProvider = context.read<AppsProvider>();
-    final settingsProvider = context.watch<SettingsProvider>();
-
-    context.select((AppsProvider p) => p.loadingApps);
-    context.select(
-      (AppsProvider p) => pipelineSignature(p.getAppValues().toList()),
-    );
-
-    var listedApps = appsProvider.getAppValues().toList();
-
-    if (!appsProvider.loadingApps &&
-        appsProvider.apps.isNotEmpty &&
-        settingsProvider.checkJustStarted() &&
-        settingsProvider.checkOnStart) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        refreshIndicatorKey.currentState?.show();
-      });
+  void _computeListData(
+    AppsProvider appsProvider,
+    SettingsProvider settingsProvider,
+  ) {
+    final apps = appsProvider.getAppValues().toList();
+    final sig = pipelineSignature(apps);
+    if (sig == _listDataSig && _cachedListedApps != null) {
+      return;
     }
+    _listDataSig = sig;
 
-    final listedAppIdSet = listedApps.map((e) => e.app.id).toSet();
-    final localSelected = selectedAppIds.where(listedAppIdSet.contains).toSet();
-    if (localSelected.length != selectedAppIds.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          final freshListedIds = appsProvider
-              .getAppValues()
-              .map((e) => e.app.id)
-              .toSet();
-          setState(() {
-            selectedAppIds = selectedAppIds
-                .where(freshListedIds.contains)
-                .toSet();
-          });
-          widget.onSelectionChanged?.call(selectedAppIds.isNotEmpty);
-        }
-      });
-    }
-
+    var listedApps = apps;
     final existingUpdates = appsProvider.findAppIdsWithPendingUpdates(
       installedOnly: true,
     );
     listedApps = getFilteredAndSortedApps(listedApps, existingUpdates.toSet());
+
+    final listedAppIdSet = listedApps.map((e) => e.app.id).toSet();
 
     var existingUpdateIdsAllOrSelected = existingUpdates
         .where(
@@ -1101,7 +1105,6 @@ class AppsPageState extends State<AppsPage> {
         grouped.putIfAbsent(listedApps[i].sourceType, () => []).add(i);
       }
     }
-    // Groups are ordered alphabetically, with the "none" bucket (null) last.
     final listedGroups = grouped.keys.toList();
     listedGroups.sort((a, b) {
       if (a == null && b == null) return 0;
@@ -1114,6 +1117,67 @@ class AppsPageState extends State<AppsPage> {
         .map((e) => e.app)
         .where((a) => selectedAppIds.contains(a.id))
         .toSet();
+
+    _cachedListedApps = listedApps;
+    _cachedExistingUpdateIds = existingUpdateIdsAllOrSelected;
+    _cachedNewInstallIds = newInstallIdsAllOrSelected;
+    _cachedTrackOnlyUpdateIds = trackOnlyUpdateIdsAllOrSelected;
+    _cachedGrouped = grouped;
+    _cachedListedGroups = listedGroups;
+    _cachedSelectedApps = selectedApps;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appsProvider = context.read<AppsProvider>();
+    final settingsProvider = context.watch<SettingsProvider>();
+
+    context.select((AppsProvider p) => p.loadingApps);
+    context.select(
+      (AppsProvider p) => pipelineSignature(p.getAppValues().toList()),
+    );
+
+    if (!appsProvider.loadingApps &&
+        appsProvider.apps.isNotEmpty &&
+        settingsProvider.checkJustStarted() &&
+        settingsProvider.checkOnStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        refreshIndicatorKey.currentState?.show();
+      });
+    }
+
+    final listedAppIdSet = appsProvider
+        .getAppValues()
+        .map((e) => e.app.id)
+        .toSet();
+    final localSelected = selectedAppIds.where(listedAppIdSet.contains).toSet();
+    if (localSelected.length != selectedAppIds.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          final freshListedIds = appsProvider
+              .getAppValues()
+              .map((e) => e.app.id)
+              .toSet();
+          setState(() {
+            selectedAppIds = selectedAppIds
+                .where(freshListedIds.contains)
+                .toSet();
+          });
+          widget.onSelectionChanged?.call(selectedAppIds.isNotEmpty);
+        }
+      });
+    }
+
+    _computeListData(appsProvider, settingsProvider);
+    final listedApps = _cachedListedApps!;
+    final existingUpdateIdsAllOrSelected = _cachedExistingUpdateIds!;
+    final newInstallIdsAllOrSelected = _cachedNewInstallIds!;
+    final trackOnlyUpdateIdsAllOrSelected = _cachedTrackOnlyUpdateIds!;
+    final groupBy = settingsProvider.groupBy;
+    final grouped = _cachedGrouped!;
+    final listedGroups = _cachedListedGroups!;
+    final selectedApps = _cachedSelectedApps!;
 
     return PopScope(
       canPop: selectedAppIds.isEmpty,
@@ -1150,6 +1214,7 @@ class AppsPageState extends State<AppsPage> {
                       trackOnlyUpdateIdsAllOrSelected,
                     ),
                   ..._getLoadingWidgets(context, appsProvider, listedApps),
+                  const _RefreshProgressBar(),
                   _getDisplayedList(
                     context,
                     listedApps,
@@ -1165,7 +1230,8 @@ class AppsPageState extends State<AppsPage> {
             ),
           ),
         ),
-        floatingActionButton: selectedAppIds.isNotEmpty
+        floatingActionButton:
+            selectedAppIds.isNotEmpty && widget.onAppSelected == null
             ? FloatingActionButton.extended(
                 onPressed: () {
                   settingsProvider.selectionClick();
@@ -1197,5 +1263,95 @@ class AppsPageState extends State<AppsPage> {
         ),
       );
     }
+  }
+
+  void showSelectedAppActions() {
+    if (!mounted) return;
+    final listedApps =
+        _cachedListedApps ??
+        context.read<AppsProvider>().getAppValues().toList();
+    final selectedApps = listedApps
+        .map((e) => e.app)
+        .where((a) => selectedAppIds.contains(a.id))
+        .toSet();
+    if (selectedApps.isNotEmpty) {
+      showMoreOptionsBottomSheet(context, selectedApps);
+    }
+  }
+}
+
+class _RefreshProgressBar extends StatelessWidget {
+  const _RefreshProgressBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final refreshProgress = context.select(
+      (AppsProvider p) => p.refreshProgress,
+    );
+    if (refreshProgress == null) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(32, 0, 32, 8),
+        child: LinearProgressIndicator(value: refreshProgress),
+      ),
+    );
+  }
+}
+
+class _TVSearchBar extends StatefulWidget {
+  const _TVSearchBar({
+    required this.controller,
+    required this.onChanged,
+    required this.trailing,
+    required this.hintText,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final List<Widget> trailing;
+  final String hintText;
+
+  @override
+  State<_TVSearchBar> createState() => _TVSearchBarState();
+}
+
+class _TVSearchBarState extends State<_TVSearchBar> {
+  final FocusNode _textFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _textFocus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        TvTextFieldFocus(
+          textFocusNode: _textFocus,
+          borderRadius: 28,
+          child: TextField(
+            focusNode: _textFocus,
+            controller: widget.controller,
+            onChanged: widget.onChanged,
+            decoration: InputDecoration(
+              hintText: widget.hintText,
+              prefixIcon: const Icon(Icons.search_rounded),
+              border: const OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(28)),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: widget.trailing,
+        ),
+      ],
+    );
   }
 }

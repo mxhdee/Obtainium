@@ -11,7 +11,7 @@ class DirectAPKLink extends AppSource {
   final HTML html = HTML();
 
   DirectAPKLink() {
-    name = 'Direct APK link';
+    name = tr('directAPKLink');
     versionDetectionDisallowed = true;
     excludeCommonSettingKeys = [
       'versionExtractionRegEx',
@@ -24,11 +24,11 @@ class DirectAPKLink extends AppSource {
   }
 
   @override
-  List<List<GeneratedFormItem>> get additionalSourceAppSpecificSettingFormItems => [
+  List<List<GeneratedFormItem>>
+  get additionalSourceAppSpecificSettingFormItems => [
     ...html.additionalSourceAppSpecificSettingFormItems.where(
-      (element) => element
-          .where((element) => element.key == 'requestHeader')
-          .isNotEmpty,
+      (element) =>
+          element.where((element) => element.key == 'requestHeader').isNotEmpty,
     ),
     [
       GeneratedFormDropdown(

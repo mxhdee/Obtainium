@@ -139,6 +139,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
       context,
       title: tr('deleteCategoriesQuestion'),
       content: Text(tr('categoryDeleteWarning')),
+      autofocusConfirm: context.read<SettingsProvider>().isTV,
     );
     if (!confirmed) return;
     final cats = Map<String, int>.from(settingsProvider.categories)
@@ -170,7 +171,7 @@ class _CategoryEditorSheetState extends State<_CategoryEditorSheet> {
         ColorPickerType.wheel: true,
       },
       title: Text(
-        tr('selectX', args: [tr('colour').toLowerCase()]),
+        tr('selectX', args: [lowerCaseUnlessLang(tr('colour'), 'de')]),
         style: Theme.of(context).textTheme.titleLarge,
       ),
       wheelDiameter: 192,

@@ -23,6 +23,9 @@ const String obtainiumId = 'dev.imranr.obtainium';
 const String obtainiumUrl = 'https://github.com/ImranR98/Obtainium';
 const Color obtainiumThemeColor = Color(0xFF6438B5);
 
+String lowerCaseUnlessLang(String str, String lang) =>
+    currentLanguageCode == lang ? str : str.toLowerCase();
+
 Locale? tryParseLocale(String? localeString) {
   if (localeString == null) return null;
   final split = localeString.split('-');
@@ -613,13 +616,30 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-
   bool get highlightTouchTargets {
     return _getBool('highlightTouchTargets') ?? false;
   }
 
   set highlightTouchTargets(bool val) {
     prefs?.setBool('highlightTouchTargets', val);
+    notifyListeners();
+  }
+
+  bool get disableSwipeActions {
+    return _getBool('disableSwipeActions') ?? false;
+  }
+
+  set disableSwipeActions(bool val) {
+    prefs?.setBool('disableSwipeActions', val);
+    notifyListeners();
+  }
+
+  bool get alwaysUsePhoneLayout {
+    return _getBool('alwaysUsePhoneLayout') ?? false;
+  }
+
+  set alwaysUsePhoneLayout(bool val) {
+    prefs?.setBool('alwaysUsePhoneLayout', val);
     notifyListeners();
   }
 
@@ -716,6 +736,15 @@ class SettingsProvider with ChangeNotifier {
 
   set searchDeselected(List<String> list) {
     prefs?.setStringList('searchDeselected', list);
+    notifyListeners();
+  }
+
+  bool get showActionBannerForUpdateOnly {
+    return _getBool('showActionBannerForUpdateOnly') ?? true;
+  }
+
+  set showActionBannerForUpdateOnly(bool val) {
+    prefs?.setBool('showActionBannerForUpdateOnly', val);
     notifyListeners();
   }
 

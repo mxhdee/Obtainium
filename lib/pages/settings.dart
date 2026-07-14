@@ -62,10 +62,12 @@ class _SettingsPageState extends State<SettingsPage> {
         level: LogLevel.info,
       );
     } catch (e, stack) {
-      unawaited(logs.add(
-        'Manual BG update check crashed: $e\n$stack',
-        level: LogLevel.error,
-      ));
+      unawaited(
+        logs.add(
+          'Manual BG update check crashed: $e\n$stack',
+          level: LogLevel.error,
+        ),
+      );
     }
     if (!mounted) return;
     setState(() => _isRunningBgCheck = false);
@@ -117,7 +119,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ColorPickerType.wheel: tr('custom'),
       },
       title: Text(
-        tr('selectX', args: [tr('colour').toLowerCase()]),
+        tr('selectX', args: [lowerCaseUnlessLang(tr('colour'), 'de')]),
         style: Theme.of(context).textTheme.titleLarge,
       ),
       wheelDiameter: 192,
@@ -310,7 +312,9 @@ class _SettingsPageState extends State<SettingsPage> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(connectedTileBigRadius),
         ),
-        title: Text(tr('selectX', args: [tr('colour').toLowerCase()])),
+        title: Text(
+          tr('selectX', args: [lowerCaseUnlessLang(tr('colour'), 'de')]),
+        ),
         subtitle: Text(
           '${ColorTools.nameThatColor(settingsProvider.themeColor)} '
           '(${ColorTools.materialNameAndCode(settingsProvider.themeColor)})',
@@ -520,9 +524,9 @@ class _SettingsPageState extends State<SettingsPage> {
       body: CustomScrollView(
         slivers: <Widget>[
           CustomAppBar(title: tr('settings')),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            sliver: SliverToBoxAdapter(
               child: settingsProvider.prefs == null
                   ? const Padding(
                       padding: EdgeInsets.symmetric(vertical: 48),
@@ -628,6 +632,12 @@ class _SettingsPageState extends State<SettingsPage> {
               settingsProvider.onlyCheckInstalledOrTrackOnlyApps = value,
         ),
         SettingsToggleRow(
+          label: tr('showActionBannerForUpdateOnly'),
+          value: settingsProvider.showActionBannerForUpdateOnly,
+          onChanged: (value) =>
+              settingsProvider.showActionBannerForUpdateOnly = value,
+        ),
+        SettingsToggleRow(
           label: tr('removeOnExternalUninstall'),
           value: settingsProvider.removeOnExternalUninstall,
           onChanged: (value) =>
@@ -710,17 +720,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 settingsProvider.shizukuPretendToBeGooglePlay = value,
           ),
         if (settingsProvider.installerMode == InstallerMode.external.name)
-          const SettingsTile(
-            child: _ExternalInstallerTile(),
-          ),
+          const SettingsTile(child: _ExternalInstallerTile()),
         if (showBgSection && settingsProvider.enableBackgroundUpdates)
           SettingsTile(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.tonal(
-                onPressed:
-                    _isRunningBgCheck ? null : _triggerManualBgCheck,
+                onPressed: _isRunningBgCheck ? null : _triggerManualBgCheck,
                 child: _isRunningBgCheck
                     ? const SizedBox(
                         width: 20,
@@ -864,6 +871,16 @@ class _SettingsPageState extends State<SettingsPage> {
           label: tr('highlightTouchTargets'),
           value: settingsProvider.highlightTouchTargets,
           onChanged: (value) => settingsProvider.highlightTouchTargets = value,
+        ),
+        SettingsToggleRow(
+          label: tr('disableSwipeActions'),
+          value: settingsProvider.disableSwipeActions,
+          onChanged: (value) => settingsProvider.disableSwipeActions = value,
+        ),
+        SettingsToggleRow(
+          label: tr('alwaysUsePhoneLayout'),
+          value: settingsProvider.alwaysUsePhoneLayout,
+          onChanged: (value) => settingsProvider.alwaysUsePhoneLayout = value,
         ),
       ],
     );

@@ -31,6 +31,7 @@ Future<void> showHelpDialog(
       ),
       actions: [
         TextButton(
+          autofocus: context.read<SettingsProvider>().isTV,
           onPressed: () => Navigator.of(ctx).pop(),
           child: Text(tr('ok')),
         ),
@@ -42,14 +43,12 @@ Future<void> showHelpDialog(
 ValueChanged<bool> hapticSwitchOnChanged(
   BuildContext context,
   ValueChanged<bool> onChanged,
-) =>
-    (v) {
-      context.read<SettingsProvider>().selectionClick();
-      onChanged(v);
-    };
+) => (v) {
+  context.read<SettingsProvider>().selectionClick();
+  onChanged(v);
+};
 
-bool _isKnownTileType(Widget w) =>
-    w is SettingsTile || w is SettingsToggleRow;
+bool _isKnownTileType(Widget w) => w is SettingsTile || w is SettingsToggleRow;
 
 Widget _wrapChildWithRadius(Widget w, BorderRadius radius) {
   if (w is SettingsTile) {
@@ -163,11 +162,8 @@ class SettingsToggleRow extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.help_outline),
                 tooltip: tr('about'),
-                onPressed: () => showHelpDialog(
-                  context,
-                  title: label,
-                  content: helpWidgets,
-                ),
+                onPressed: () =>
+                    showHelpDialog(context, title: label, content: helpWidgets),
               ),
             Switch(
               value: value,
